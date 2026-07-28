@@ -1,4 +1,9 @@
 /**
+ * Google Cloud Console にて作成された OAuth 2.0 クライアント ID
+ */
+const GOOGLE_CLIENT_ID = '639122043891-q39okfqfe62pi62filo5nkgutgbjmqrj.apps.googleusercontent.com'
+
+/**
  * 0-1000 スケールの正規化座標 box2d から Canvas ピクセル位置を算出します。
  *
  * @param {number[]} box2d - [ymin, xmin, ymax, xmax] 0-1000
@@ -28,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const errorSection = document.getElementById('error-section')
 
   const authStatusBadge = document.getElementById('auth-status-badge')
+  const googleLoginBtn = document.getElementById('google-login-btn')
   const manualTokenInput = document.getElementById('manual-token-input')
   const pasteTokenBtn = document.getElementById('paste-token-btn')
   const saveTokenBtn = document.getElementById('save-token-btn')
@@ -114,6 +120,35 @@ document.addEventListener('DOMContentLoaded', () => {
   function showError(msg) {
     if (errorMessageText) errorMessageText.value = msg
     showView('error')
+  }
+
+  // Google Identity Services (GIS) OAuth2 ワンタップサインイン
+  if (googleLoginBtn) {
+    googleLoginBtn.addEventListener('click', () => {
+      try {
+        if (window.google?.accounts?.oauth2) {
+          // Google 公式 Identity Services SDK を用いてポップアップでトークンを取得
+          const client = window.google.accounts.oauth2.initTokenClient({
+            client_id: GOOGLE_CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/drive.file',
+            callback: (response) => {
+              if (response.access_token) {
+                userAccessToken = response.access_token
+                localStorage.setItem('ocrx_google_user_token', userAccessToken)
+                checkAuthStatus()
+              } else if (response.error) {
+                showError(`Google ログインエラー: ${response.error}`)
+              }
+            },
+          })
+          client.requestAccessToken()
+        } else {
+          showError('Google ログイン SDK の読み込みに失敗しました。ページをリロードするか下部手動入力をお試しください。')
+        }
+      } catch (err) {
+        showError(`Google ログイン中に例外が発生しました: ${err.message || err}`)
+      }
+    })
   }
 
   // クリップボードからの自動貼り付けボタン

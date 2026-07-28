@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="/styles.css">
   <!-- pdf-lib CDN for client-side PDF generation -->
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <!-- Google Identity Services SDK -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <div class="app-container">
@@ -28,26 +30,21 @@
     <main class="app-main">
       <!-- 0. Google OAuth2 Login Section (shown if not authenticated) -->
       <section id="auth-section" class="card view-section active">
-        <div class="hero-icon">🔑</div>
-        <h2>Google トークンの接続設定</h2>
-        <p class="subtitle">ご自身のアカウント（大容量 5TB ストレージ）へ直接自動保存するため、トークンをセットしてください。</p>
+        <div class="hero-icon">🔐</div>
+        <h2>Google アカウントでログイン</h2>
+        <p class="subtitle">ご自身のアカウント（大容量 5TB ストレージ）へダイレクト自動保存するため、ワンタップでログイン認証を行ってください。</p>
 
-        <div class="oauth-guide-box">
-          <p class="guide-title">💡 1分でできるトークン取得手順:</p>
-          <ol class="guide-steps">
-            <li><a href="https://developers.google.com/oauthplayground/#step1&scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file" target="_blank" class="link-btn">👉 OAuth Playground を開く</a></li>
-            <li>「Authorize APIs」を押し、ご自身の Google アカウントでログイン</li>
-            <li>「Exchange authorization code for tokens」をクリック</li>
-            <li>表示された <strong>Access token</strong> (<code>ya29...</code>) をコピーして下に貼り付け</li>
-          </ol>
-        </div>
+        <button id="google-login-btn" class="btn btn-primary btn-lg" style="margin-bottom: 16px;">
+          <span>🔑 Google でサインイン認証</span>
+        </button>
 
         <div class="token-manual-input">
+          <p class="small-hint">または Access Token を手動入力:</p>
           <div class="input-with-button">
             <input type="text" id="manual-token-input" placeholder="Access Token (ya29...)" class="input-text">
-            <button id="paste-token-btn" class="btn btn-secondary btn-sm" type="button">📋 クリップボードから貼り付け</button>
+            <button id="paste-token-btn" class="btn btn-secondary btn-sm" type="button">📋 貼り付け</button>
           </div>
-          <button id="save-token-btn" class="btn btn-primary" type="button">トークンを保存して開始</button>
+          <button id="save-token-btn" class="btn btn-secondary" type="button">トークン保存</button>
           <p id="token-error-msg" class="error-msg-small hidden"></p>
         </div>
       </section>
@@ -63,7 +60,7 @@
           <input type="file" id="camera-input" accept="image/*" capture="environment">
         </label>
 
-        <button id="reauth-btn" class="btn btn-text small-link">トークンを再設定</button>
+        <button id="reauth-btn" class="btn btn-text small-link">別のアカウントで再ログイン</button>
       </section>
 
       <!-- 2. Processing State -->
