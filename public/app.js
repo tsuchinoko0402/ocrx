@@ -33,12 +33,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const errorSection = document.getElementById('error-section')
 
   const authStatusBadge = document.getElementById('auth-status-badge')
+  const logoutBtn = document.getElementById('logout-btn')
   const googleLoginBtn = document.getElementById('google-login-btn')
   const manualTokenInput = document.getElementById('manual-token-input')
   const pasteTokenBtn = document.getElementById('paste-token-btn')
   const saveTokenBtn = document.getElementById('save-token-btn')
   const tokenErrorMsg = document.getElementById('token-error-msg')
-  const reauthBtn = document.getElementById('reauth-btn')
 
   const cameraInput = document.getElementById('camera-input')
   const processTitle = document.getElementById('process-title')
@@ -70,14 +70,29 @@ document.addEventListener('DOMContentLoaded', () => {
         authStatusBadge.textContent = '認証済み (5TB)'
         authStatusBadge.className = 'badge badge-success'
       }
+      if (logoutBtn) logoutBtn.classList.remove('hidden')
       showView('capture')
     } else {
       if (authStatusBadge) {
         authStatusBadge.textContent = '未認証'
         authStatusBadge.className = 'badge badge-warning'
       }
+      if (logoutBtn) logoutBtn.classList.add('hidden')
       showView('auth')
     }
+  }
+
+  /**
+   * 認証トークンを解除（クリア）し、未認証の初期状態に戻します。
+   */
+  function handleLogout() {
+    userAccessToken = ''
+    localStorage.removeItem('ocrx_google_user_token')
+    checkAuthStatus()
+  }
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', handleLogout)
   }
 
   /**
@@ -182,14 +197,6 @@ document.addEventListener('DOMContentLoaded', () => {
       userAccessToken = token
       localStorage.setItem('ocrx_google_user_token', userAccessToken)
       if (manualTokenInput) manualTokenInput.value = ''
-      checkAuthStatus()
-    })
-  }
-
-  if (reauthBtn) {
-    reauthBtn.addEventListener('click', () => {
-      userAccessToken = ''
-      localStorage.removeItem('ocrx_google_user_token')
       checkAuthStatus()
     })
   }
