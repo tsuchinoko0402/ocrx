@@ -136,7 +136,8 @@ body {
 .live-camera-wrapper {
   position: relative;
   width: 100%;
-  height: 320px;
+  aspect-ratio: 4 / 3;
+  max-height: 340px;
   background: #000;
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -145,10 +146,15 @@ body {
   align-items: center;
 }
 
+#auto-capture-view.hidden {
+  display: none !important;
+}
+
 #auto-video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  background: #000;
 }
 
 .doc-guide-box {
