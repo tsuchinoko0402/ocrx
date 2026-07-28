@@ -10,8 +10,6 @@
   <link rel="stylesheet" href="/styles.css">
   <!-- pdf-lib CDN for client-side PDF generation -->
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-  <!-- Google Identity Services SDK -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <div class="app-container">
@@ -50,19 +48,44 @@
         </div>
       </section>
 
-      <!-- 1. Initial State: Camera Capture -->
+      <!-- 1. Initial State: Camera Capture & Mode Selector -->
       <section id="capture-section" class="card view-section hidden">
-        <div class="hero-icon">📄</div>
-        <h2>紙資料をスキャン</h2>
-        <p class="subtitle">書類、プリント、手書きメモを撮影するだけでワンタップでOCR解析・PDFトリミング・Drive保存を行います。</p>
+        <div class="mode-selector-container">
+          <button id="mode-single-btn" class="mode-tab-btn active" data-mode="single">確認スキャン</button>
+          <button id="mode-continuous-btn" class="mode-tab-btn" data-mode="continuous">⚡ 連続連写</button>
+          <button id="mode-auto-btn" class="mode-tab-btn" data-mode="auto">🎯 オート撮影</button>
+        </div>
 
-        <label class="btn btn-primary btn-lg capture-btn">
-          <span>📷 写真を撮影 / 選択</span>
-          <input type="file" id="camera-input" accept="image/*" capture="environment">
-        </label>
+        <!-- Single / Continuous Manual Capture View -->
+        <div id="manual-capture-view">
+          <div class="hero-icon">📄</div>
+          <h2 id="capture-mode-title">紙資料をスキャン</h2>
+          <p id="capture-mode-desc" class="subtitle">1枚ずつ撮影しプレビュー確認を行う標準モードです。</p>
+
+          <label class="btn btn-primary btn-lg capture-btn">
+            <span id="capture-btn-text">📷 写真を撮影 / 選択</span>
+            <input type="file" id="camera-input" accept="image/*" capture="environment">
+          </label>
+        </div>
+
+        <!-- Auto Capture Live Camera Stream View -->
+        <div id="auto-capture-view" class="hidden">
+          <div class="live-camera-wrapper">
+            <video id="auto-video" autoplay playsinline muted></video>
+            <canvas id="auto-canvas" class="hidden"></canvas>
+            <div id="doc-guide-box" class="doc-guide-box">
+              <span class="guide-corner top-left"></span>
+              <span class="guide-corner top-right"></span>
+              <span class="guide-corner bottom-left"></span>
+              <span class="guide-corner bottom-right"></span>
+              <p id="auto-status-text">書類をフレーム枠に合わせて静止してください</p>
+            </div>
+          </div>
+          <button id="stop-auto-btn" class="btn btn-secondary btn-sm" style="margin-top: 12px;">カメラを停止</button>
+        </div>
       </section>
 
-      <!-- 2. Processing State -->
+      <!-- 2. Processing State (for Single mode) -->
       <section id="processing-section" class="card view-section hidden">
         <div class="spinner-container">
           <div class="spinner"></div>
@@ -75,7 +98,7 @@
         </div>
       </section>
 
-      <!-- 3. Result Preview State -->
+      <!-- 3. Result Preview State (for Single mode) -->
       <section id="result-section" class="card view-section hidden">
         <div class="status-header">
           <span class="status-icon">✅</span>
@@ -105,7 +128,19 @@
         </div>
       </section>
 
-      <!-- 4. Error Display State (Copyable) -->
+      <!-- 4. Background Processing Queue Monitor (for Continuous & Auto modes) -->
+      <section id="queue-section" class="card queue-card hidden">
+        <div class="queue-header">
+          <h3>📦 バックグラウンド保存キュー (<span id="queue-count-text">0/0</span>)</h3>
+          <button id="clear-queue-btn" class="btn btn-text btn-sm">クリア</button>
+        </div>
+
+        <div id="queue-items-container" class="queue-items-container">
+          <!-- Queue items will be rendered here dynamically -->
+        </div>
+      </section>
+
+      <!-- 5. Error Display State (Copyable) -->
       <section id="error-section" class="card view-section error-card hidden">
         <div class="status-header">
           <span class="status-icon">⚠️</span>

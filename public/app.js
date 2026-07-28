@@ -26,12 +26,15 @@ function calculateCropArea(box2d, imageWidth, imageHeight) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // セクション要素
   const authSection = document.getElementById('auth-section')
   const captureSection = document.getElementById('capture-section')
   const processingSection = document.getElementById('processing-section')
   const resultSection = document.getElementById('result-section')
+  const queueSection = document.getElementById('queue-section')
   const errorSection = document.getElementById('error-section')
 
+  // 認証要素
   const authStatusBadge = document.getElementById('auth-status-badge')
   const logoutBtn = document.getElementById('logout-btn')
   const googleLoginBtn = document.getElementById('google-login-btn')
@@ -40,7 +43,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveTokenBtn = document.getElementById('save-token-btn')
   const tokenErrorMsg = document.getElementById('token-error-msg')
 
+  // モード切替 ＆ 撮影コントロール要素
+  const modeSingleBtn = document.getElementById('mode-single-btn')
+  const modeContinuousBtn = document.getElementById('mode-continuous-btn')
+  const modeAutoBtn = document.getElementById('mode-auto-btn')
+
+  const manualCaptureView = document.getElementById('manual-capture-view')
+  const autoCaptureView = document.getElementById('auto-capture-view')
+  const captureModeTitle = document.getElementById('capture-mode-title')
+  const captureModeDesc = document.getElementById('capture-mode-desc')
+  const captureBtnText = document.getElementById('capture-btn-text')
   const cameraInput = document.getElementById('camera-input')
+
+  // オートキャプチャ要素
+  const autoVideo = document.getElementById('auto-video')
+  const autoCanvas = document.getElementById('auto-canvas')
+  const docGuideBox = document.getElementById('doc-guide-box')
+  const autoStatusText = document.getElementById('auto-status-text')
+  const stopAutoBtn = document.getElementById('stop-auto-btn')
+
+  // 単体処理 ＆ 結果プレビュー要素
   const processTitle = document.getElementById('process-title')
   const processDesc = document.getElementById('process-desc')
   const progressBar = document.getElementById('progress-bar')
@@ -50,18 +72,35 @@ document.addEventListener('DOMContentLoaded', () => {
   const resultTitle = document.getElementById('result-title')
   const resetBtn = document.getElementById('reset-btn')
 
+  // バックグラウンドキュー要素
+  const queueCountText = document.getElementById('queue-count-text')
+  const queueItemsContainer = document.getElementById('queue-items-container')
+  const clearQueueBtn = document.getElementById('clear-queue-btn')
+
+  // エラー表示要素
   const errorMessageText = document.getElementById('error-message-text')
   const copyErrorBtn = document.getElementById('copy-error-btn')
   const retryBtn = document.getElementById('retry-btn')
 
+  // タブ要素
   const tabPreviewBtn = document.getElementById('tab-preview-btn')
   const tabMdBtn = document.getElementById('tab-md-btn')
   const tabPreviewContent = document.getElementById('tab-preview-content')
   const tabMdContent = document.getElementById('tab-md-content')
 
-  // URL の Hash ハッシュフラグメント（リダイレクトOAuth応答）を自動解析
+  // ステート定義
   let userAccessToken = localStorage.getItem('ocrx_google_user_token') || ''
+  let currentScanMode = 'single' // 'single' | 'continuous' | 'auto'
+  let activeVideoStream = null
+  let autoDetectIntervalId = null
+  let isAutoCapturing = false
 
+  // バックグラウンド非同期処理キュー構造
+  const backgroundQueue = [] // { id: string, file: File, status: 'pending'|'processing'|'completed'|'error', progress: string, title?: string, error?: string }
+  let activeQueueWorkers = 0
+  const MAX_CONCURRENT_WORKERS = 2
+
+  // URL Hash 解析 (OAuth2 リダイレクト対応)
   if (window.location.hash) {
     const params = new URLSearchParams(window.location.hash.substring(1))
     const accessTokenFromHash = params.get('access_token')
@@ -70,7 +109,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (accessTokenFromHash) {
       userAccessToken = accessTokenFromHash
       localStorage.setItem('ocrx_google_user_token', userAccessToken)
-      // クリーンな URL にリセット
       history.replaceState(null, '', window.location.pathname)
     } else if (errorFromHash) {
       const errorDesc = params.get('error_description') || errorFromHash
@@ -97,12 +135,13 @@ document.addEventListener('DOMContentLoaded', () => {
         authStatusBadge.className = 'badge badge-warning'
       }
       if (logoutBtn) logoutBtn.classList.add('hidden')
+      stopAutoCamera()
       showView('auth')
     }
   }
 
   /**
-   * 認証トークンを解除（クリア）し、未認証の初期状態に戻します。
+   * 認証トークンを解除（クリア）します。
    */
   function handleLogout() {
     userAccessToken = ''
@@ -110,9 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkAuthStatus()
   }
 
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', handleLogout)
-  }
+  if (logoutBtn) logoutBtn.addEventListener('click', handleLogout)
 
   /**
    * 表示画面を切り替えます。
@@ -134,32 +171,343 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * プログレス状態を更新します。
+   * スキャンモードを切り替えます。
    *
-   * @param {number} percentage
-   * @param {string} title
-   * @param {string} desc
+   * @param {'single' | 'continuous' | 'auto'} mode
    */
-  function updateProgress(percentage, title, desc) {
-    if (progressBar) progressBar.style.width = `${percentage}%`
-    if (title && processTitle) processTitle.textContent = title
-    if (desc && processDesc) processDesc.textContent = desc
+  function switchScanMode(mode) {
+    currentScanMode = mode
+
+    modeSingleBtn.classList.toggle('active', mode === 'single')
+    modeContinuousBtn.classList.toggle('active', mode === 'continuous')
+    modeAutoBtn.classList.toggle('active', mode === 'auto')
+
+    if (mode === 'single') {
+      captureModeTitle.textContent = '確認スキャン'
+      captureModeDesc.textContent = '1枚ずつ撮影しプレビュー確認を行う標準モードです。'
+      captureBtnText.textContent = '📷 写真を撮影 / 選択'
+      manualCaptureView.classList.remove('hidden')
+      autoCaptureView.classList.add('hidden')
+      stopAutoCamera()
+    } else if (mode === 'continuous') {
+      captureModeTitle.textContent = '⚡ 連続連写スキャン'
+      captureModeDesc.textContent = '待ち時間ゼロ！パシャパシャ撮影し裏で非同期自動保存します。'
+      captureBtnText.textContent = '⚡ 連続撮影を開始'
+      manualCaptureView.classList.remove('hidden')
+      autoCaptureView.classList.add('hidden')
+      stopAutoCamera()
+      queueSection.classList.remove('hidden')
+    } else if (mode === 'auto') {
+      manualCaptureView.classList.add('hidden')
+      autoCaptureView.classList.remove('hidden')
+      queueSection.classList.remove('hidden')
+      startAutoCamera()
+    }
+  }
+
+  if (modeSingleBtn) modeSingleBtn.addEventListener('click', () => switchScanMode('single'))
+  if (modeContinuousBtn) modeContinuousBtn.addEventListener('click', () => switchScanMode('continuous'))
+  if (modeAutoBtn) modeAutoBtn.addEventListener('click', () => switchScanMode('auto'))
+
+  // -------------------------------------------------------------
+  // オートシャッター ＆ 書類境界・ブレ静止検出エンジン
+  // -------------------------------------------------------------
+  let stableCounter = 0
+  let prevImageData = null
+
+  async function startAutoCamera() {
+    try {
+      stopAutoCamera()
+      activeVideoStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      })
+      autoVideo.srcObject = activeVideoStream
+      autoStatusText.textContent = '書類を枠内に合わせて静止してください'
+      docGuideBox.className = 'doc-guide-box'
+
+      stableCounter = 0
+      prevImageData = null
+      autoDetectIntervalId = setInterval(analyzeLiveFrame, 300)
+    } catch (err) {
+      showError(`カメラの起動に失敗しました: ${err.message || err}\nブラウザのカメラアクセス許可をご確認ください。`)
+    }
+  }
+
+  function stopAutoCamera() {
+    if (autoDetectIntervalId) {
+      clearInterval(autoDetectIntervalId)
+      autoDetectIntervalId = null
+    }
+    if (activeVideoStream) {
+      activeVideoStream.getTracks().forEach((track) => track.stop())
+      activeVideoStream = null
+    }
+  }
+
+  if (stopAutoBtn) stopAutoBtn.addEventListener('click', () => switchScanMode('single'))
+
+  /**
+   * リアルタイムのビデオフレームから手ブレ安定度と書類枠を検出します。
+   */
+  function analyzeLiveFrame() {
+    if (!autoVideo || autoVideo.readyState !== 4 || isAutoCapturing) return
+
+    const width = 160
+    const height = 120
+    autoCanvas.width = width
+    autoCanvas.height = height
+    const ctx = autoCanvas.getContext('2d')
+    ctx.drawImage(autoVideo, 0, 0, width, height)
+
+    const frame = ctx.getImageData(0, 0, width, height)
+    const data = frame.data
+
+    if (!prevImageData) {
+      prevImageData = data
+      return
+    }
+
+    // パクセル差分から画面の静止度（手ブレ収束）を計算
+    let diff = 0
+    for (let i = 0; i < data.length; i += 16) {
+      diff += Math.abs(data[i] - prevImageData[i])
+    }
+    prevImageData = data
+
+    const motionScore = diff / (width * height)
+
+    if (motionScore < 3.5) {
+      // 静止検出
+      stableCounter++
+      docGuideBox.className = 'doc-guide-box detected'
+      autoStatusText.textContent = `🎯 書類検出中... (${stableCounter}/3)`
+
+      if (stableCounter >= 3) {
+        // 0.9秒間完全静止したため自動撮影を実行
+        captureFromLiveStream()
+      }
+    } else {
+      stableCounter = 0
+      docGuideBox.className = 'doc-guide-box'
+      autoStatusText.textContent = '書類を枠内に合わせて静止してください'
+    }
   }
 
   /**
-   * エラー画面を出力します。
-   *
-   * @param {string} msg
+   * ライブカメラビデオストリームから静止画を自動キャプチャしキューへ投入します。
    */
-  function showError(msg) {
-    if (errorMessageText) errorMessageText.value = msg
-    showView('error')
+  function captureFromLiveStream() {
+    if (isAutoCapturing) return
+    isAutoCapturing = true
+
+    docGuideBox.className = 'doc-guide-box capturing'
+    autoStatusText.textContent = '📸 キャプチャ中！'
+
+    const captureCanvas = document.createElement('canvas')
+    captureCanvas.width = autoVideo.videoWidth || 1280
+    captureCanvas.height = autoVideo.videoHeight || 720
+    const ctx = captureCanvas.getContext('2d')
+    ctx.drawImage(autoVideo, 0, 0, captureCanvas.width, captureCanvas.height)
+
+    captureCanvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `AutoScan_${Date.now()}.jpg`, { type: 'image/jpeg' })
+        enqueueBackgroundJob(file)
+      }
+      setTimeout(() => {
+        isAutoCapturing = false
+        stableCounter = 0
+        docGuideBox.className = 'doc-guide-box'
+        autoStatusText.textContent = '書類を枠内に合わせて静止してください'
+      }, 1500)
+    }, 'image/jpeg', 0.92)
   }
 
-  // Google OAuth2 リダイレクト型ワンタップサインイン（ポップアップブロック回避）
+  // -------------------------------------------------------------
+  // バックグラウンド非同期処理 Queue エンジン
+  // -------------------------------------------------------------
+
+  /**
+   * 撮影画像をバックグラウンド非同期 Queue に投入します。
+   *
+   * @param {File} file
+   */
+  function enqueueBackgroundJob(file) {
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+    const jobItem = {
+      id: jobId,
+      file: file,
+      status: 'pending',
+      progress: '待機中...',
+    }
+
+    backgroundQueue.push(jobItem)
+    queueSection.classList.remove('hidden')
+    renderQueueList()
+    triggerQueueWorkers()
+  }
+
+  /**
+   * バックグラウンド Queue ワーカーを動的に起動し最大並行数でトリガーします。
+   */
+  function triggerQueueWorkers() {
+    while (activeQueueWorkers < MAX_CONCURRENT_WORKERS) {
+      const pendingJob = backgroundQueue.find((j) => j.status === 'pending')
+      if (!pendingJob) break
+
+      activeQueueWorkers++
+      pendingJob.status = 'processing'
+      pendingJob.progress = 'Gemini AI 解析中...'
+      renderQueueList()
+
+      processSingleJob(pendingJob).finally(() => {
+        activeQueueWorkers--
+        triggerQueueWorkers()
+      })
+    }
+  }
+
+  /**
+   * 1つのジョブを非同期で完全実行（Gemini ➔ Canvas Crop ➔ PDF生成 ➔ 5TB Google Drive 保存）します。
+   *
+   * @param {object} job
+   */
+  async function processSingleJob(job) {
+    try {
+      // 1. Base64 変換
+      const imageBase64 = await fileToBase64(job.file)
+
+      // 2. /api/analyze 呼び出し
+      const analyzeRes = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: imageBase64.split(',')[1],
+          mimeType: job.file.type || 'image/jpeg',
+        }),
+      })
+
+      if (!analyzeRes.ok) throw new Error(`Analyze API Error (${analyzeRes.status})`)
+      const analyzeData = await analyzeRes.json()
+
+      job.progress = 'クロップ & PDF 生成中...'
+      renderQueueList()
+
+      // 3. クロップ Canvas 処理
+      const img = await loadImage(imageBase64)
+      const cropArea = calculateCropArea(analyzeData.box2d, img.width, img.height)
+
+      const tempCanvas = document.createElement('canvas')
+      tempCanvas.width = cropArea.width
+      tempCanvas.height = cropArea.height
+      const ctx = tempCanvas.getContext('2d')
+      ctx.drawImage(img, cropArea.x, cropArea.y, cropArea.width, cropArea.height, 0, 0, cropArea.width, cropArea.height)
+
+      const croppedJpgBlob = dataURItoBlob(tempCanvas.toDataURL('image/jpeg', 0.9))
+
+      // 4. Client-side PDF 生成
+      const pdfBlob = await generatePdfFromImageBlob(croppedJpgBlob, cropArea.width, cropArea.height)
+
+      job.progress = 'Drive に保存中...'
+      renderQueueList()
+
+      // 5. タインプスタンプ付きファイル名で Google Drive 保存
+      const now = new Date()
+      const timestamp = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+        '_',
+        String(now.getHours()).padStart(2, '0'),
+        String(now.getMinutes()).padStart(2, '0'),
+        String(now.getSeconds()).padStart(2, '0'),
+      ].join('')
+
+      const fileTitle = `${timestamp}_${analyzeData.title}`
+
+      const formData = new FormData()
+      formData.append('title', fileTitle)
+      formData.append('jpg', job.file, `${fileTitle}.jpg`)
+      formData.append('markdown', analyzeData.markdown)
+      formData.append('pdf', pdfBlob, `${fileTitle}.pdf`)
+      formData.append('userAccessToken', userAccessToken)
+
+      const saveRes = await fetch('/api/save', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!saveRes.ok) throw new Error(`Save API Error (${saveRes.status})`)
+
+      job.status = 'completed'
+      job.title = fileTitle
+      job.progress = '保存完了 ✅'
+    } catch (err) {
+      job.status = 'error'
+      job.error = err.message || String(err)
+      job.progress = '保存失敗 ❌'
+    } finally {
+      renderQueueList()
+    }
+  }
+
+  /**
+   * Queue モニター UI をリアルタイムレンダリングします。
+   */
+  function renderQueueList() {
+    if (!queueItemsContainer || !queueCountText) return
+
+    const total = backgroundQueue.length
+    const completed = backgroundQueue.filter((j) => j.status === 'completed').length
+    queueCountText.textContent = `${completed}/${total}`
+
+    queueItemsContainer.innerHTML = ''
+
+    backgroundQueue.slice().reverse().forEach((job) => {
+      const itemEl = document.createElement('div')
+      itemEl.className = 'queue-item'
+
+      const statusClass =
+        job.status === 'pending'
+          ? 'status-pending'
+          : job.status === 'processing'
+          ? 'status-processing'
+          : job.status === 'completed'
+          ? 'status-completed'
+          : 'status-error'
+
+      const titleText = job.title || job.file.name || 'スキャン画像'
+
+      itemEl.innerHTML = `
+        <div class="queue-item-info">
+          <span>📄</span>
+          <span class="queue-item-title">${escapeHtml(titleText)}</span>
+        </div>
+        <span class="queue-item-status ${statusClass}">${escapeHtml(job.progress)}</span>
+      `
+      queueItemsContainer.appendChild(itemEl)
+    })
+  }
+
+  if (clearQueueBtn) {
+    clearQueueBtn.addEventListener('click', () => {
+      // 処理中以外のジョブをクリア
+      for (let i = backgroundQueue.length - 1; i >= 0; i--) {
+        if (backgroundQueue[i].status !== 'processing') {
+          backgroundQueue.splice(i, 1)
+        }
+      }
+      renderQueueList()
+    })
+  }
+
+  // -------------------------------------------------------------
+  // ボタンイベントハンドラ類
+  // -------------------------------------------------------------
+
   if (googleLoginBtn) {
     googleLoginBtn.addEventListener('click', () => {
-      // ポップアップのブロックやブラウザ制限を回避し、確実に Google 認可画面へ誘導するため標準 OAuth2 リダイレクト URI を生成
       const redirectUri = window.location.origin
       const scope = encodeURIComponent('https://www.googleapis.com/auth/drive.file')
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(
@@ -170,7 +518,6 @@ document.addEventListener('DOMContentLoaded', () => {
     })
   }
 
-  // クリップボードからの自動貼り付けボタン
   if (pasteTokenBtn) {
     pasteTokenBtn.addEventListener('click', async () => {
       try {
@@ -185,7 +532,6 @@ document.addEventListener('DOMContentLoaded', () => {
     })
   }
 
-  // 手動トークン保存ボタン
   if (saveTokenBtn) {
     saveTokenBtn.addEventListener('click', () => {
       const token = manualTokenInput ? manualTokenInput.value.trim() : ''
@@ -253,7 +599,7 @@ document.addEventListener('DOMContentLoaded', () => {
     })
   }
 
-  // カメラ撮影・スキャンイベント
+  // カメラ撮影・スキャンイベント（Single または Continuous）
   if (cameraInput) {
     cameraInput.addEventListener('change', async (e) => {
       const file = e.target.files?.[0]
@@ -264,14 +610,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return
       }
 
+      if (currentScanMode === 'continuous') {
+        // 連続スキャンモード: 画面をブロックせず直ちに非同期 Queue に投入
+        enqueueBackgroundJob(file)
+        cameraInput.value = '' // 直ちに次の撮影が可能な状態にクリア
+        return
+      }
+
+      // シングルモード: 現状通り 1枚ごとにプログレス表示 ＆ 確認
       try {
         showView('processing')
         updateProgress(20, 'Gemini AI で解析中...', '文字起こし・Markdown化・トリミング位置を検出しています。')
 
-        // 1. 画像ファイルを Base64 に変換
         const imageBase64 = await fileToBase64(file)
 
-        // 2. Worker /api/analyze 呼び出し
         const analyzeRes = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -290,34 +642,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateProgress(60, 'クロップ & PDF 生成中...', 'ブラウザで高精細クロップとPDFファイルを作成しています。')
 
-        // 3. Canvas API でクロップ画像作成
         const img = await loadImage(imageBase64)
         const cropArea = calculateCropArea(analyzeData.box2d, img.width, img.height)
 
         cropCanvas.width = cropArea.width
         cropCanvas.height = cropArea.height
         const ctx = cropCanvas.getContext('2d')
-        ctx.drawImage(
-          img,
-          cropArea.x,
-          cropArea.y,
-          cropArea.width,
-          cropArea.height,
-          0,
-          0,
-          cropArea.width,
-          cropArea.height
-        )
+        ctx.drawImage(img, cropArea.x, cropArea.y, cropArea.width, cropArea.height, 0, 0, cropArea.width, cropArea.height)
 
         const croppedJpgDataUrl = cropCanvas.toDataURL('image/jpeg', 0.9)
         const croppedJpgBlob = dataURItoBlob(croppedJpgDataUrl)
 
-        // 4. Client-side で pdf-lib を使い PDF 生成
         const pdfBlob = await generatePdfFromImageBlob(croppedJpgBlob, cropArea.width, cropArea.height)
 
         updateProgress(85, 'ご自身の Google Drive に保存中...', 'ユーザー容量 (5TB) を利用して原本JPG, Markdown, PDFを自動保存しています。')
 
-        // 5. Google Drive 上で作成日時順に綺麗にソートできるよう YYYYMMDD_HHmmss 形式のタイムスタンプを付与
         const now = new Date()
         const timestamp = [
           now.getFullYear(),
@@ -331,7 +670,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const fileTitle = `${timestamp}_${analyzeData.title}`
 
-        // ユーザーのアクセストークンを付与して /api/save を呼び出し
         const formData = new FormData()
         formData.append('title', fileTitle)
         formData.append('jpg', file, `${fileTitle}.jpg`)
@@ -349,7 +687,6 @@ document.addEventListener('DOMContentLoaded', () => {
           throw new Error(`Save API Error (${saveRes.status}): ${errText}`)
         }
 
-        // 6. 結果プレビュー表示
         if (mdPreview) mdPreview.textContent = analyzeData.markdown
         if (resultTitle) resultTitle.textContent = analyzeData.title
         showView('result')
@@ -359,6 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
     })
   }
 
+  // ユーティリティ関数
   function fileToBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
@@ -405,6 +743,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const pdfBytes = await pdfDoc.save()
     return new Blob([pdfBytes], { type: 'application/pdf' })
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
   }
 
   // 初期化時に認証状態をチェック
