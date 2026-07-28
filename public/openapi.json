@@ -1,0 +1,66 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ocrx API",
+    "version": "1.0.0",
+    "description": "Document OCR, Markdown transcription, and Google Drive upload API for AI agents and PWA"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health check endpoint",
+        "responses": {
+          "200": { "description": "Worker is running" }
+        }
+      }
+    },
+    "/api/analyze": {
+      "post": {
+        "summary": "Analyze document image with Gemini 2.5 Flash",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "imageBase64": { "type": "string", "description": "Base64 encoded image data" },
+                  "mimeType": { "type": "string", "description": "Image MIME type" }
+                },
+                "required": ["imageBase64"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Analysis result (title, markdown, box2d)" },
+          "400": { "description": "Invalid payload" }
+        }
+      }
+    },
+    "/api/save": {
+      "post": {
+        "summary": "Upload scanned set (JPG, Markdown, PDF) to Google Drive",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "jpg": { "type": "string", "format": "binary" },
+                  "markdown": { "type": "string" },
+                  "pdf": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "File upload status" }
+        }
+      }
+    }
+  }
+}

@@ -2,10 +2,90 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ocrx</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ocrx - スマホ即OCR・Google Drive自動保存</title>
+  <meta name="description" content="スマホで紙資料を撮影し、ワンタップでGemini OCR・トリミング・Markdown化を行いGoogle Driveへ自動保存するPWAアプリ">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="stylesheet" href="/styles.css">
+  <!-- pdf-lib CDN for client-side PDF generation -->
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 </head>
 <body>
-  <h1>ocrx Initializing...</h1>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo">
+        <span class="logo-icon">📸</span>
+        <h1>ocrx</h1>
+      </div>
+      <span class="badge">Gemini 2.5 Flash</span>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      <!-- 1. Initial State: Camera Capture -->
+      <section id="capture-section" class="card view-section active">
+        <div class="hero-icon">📄</div>
+        <h2>紙資料をスキャン</h2>
+        <p class="subtitle">書類、プリント、手書きメモを撮影するだけでワンタップでOCR解析・PDFトリミング・Drive保存を行います。</p>
+
+        <label class="btn btn-primary btn-lg capture-btn">
+          <span>📷 写真を撮影 / 選択</span>
+          <input type="file" id="camera-input" accept="image/*" capture="environment">
+        </label>
+      </section>
+
+      <!-- 2. Processing State -->
+      <section id="processing-section" class="card view-section hidden">
+        <div class="spinner-container">
+          <div class="spinner"></div>
+        </div>
+        <h2 id="process-title">Gemini AI で解析中...</h2>
+        <p id="process-desc" class="subtitle">文字起こし・Markdown化・トリミング位置を検出しています。</p>
+
+        <div class="progress-bar-container">
+          <div id="progress-bar" class="progress-bar" style="width: 25%;"></div>
+        </div>
+      </section>
+
+      <!-- 3. Result Preview State -->
+      <section id="result-section" class="card view-section hidden">
+        <div class="status-header">
+          <span class="status-icon">✅</span>
+          <h2 id="result-title">スキャン完了</h2>
+        </div>
+
+        <div class="preview-tabs">
+          <button id="tab-preview-btn" class="tab-btn active">トリミング画像</button>
+          <button id="tab-md-btn" class="tab-btn">Markdown 本文</button>
+        </div>
+
+        <!-- Tab 1: Cropped Preview -->
+        <div id="tab-preview-content" class="tab-content active">
+          <div class="canvas-wrapper">
+            <canvas id="crop-canvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Tab 2: Markdown Preview -->
+        <div id="tab-md-content" class="tab-content hidden">
+          <pre id="md-preview" class="md-preview-box"></pre>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+          <button id="reset-btn" class="btn btn-secondary">別の資料を撮影</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Powered by Cloudflare Workers & Gemini 2.5 Flash</p>
+    </footer>
+  </div>
+
+  <script src="/app.js"></script>
 </body>
 </html>
