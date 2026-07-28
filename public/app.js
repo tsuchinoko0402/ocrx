@@ -59,7 +59,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const tabPreviewContent = document.getElementById('tab-preview-content')
   const tabMdContent = document.getElementById('tab-md-content')
 
+  // URL の Hash ハッシュフラグメント（リダイレクトOAuth応答）を自動解析
   let userAccessToken = localStorage.getItem('ocrx_google_user_token') || ''
+
+  if (window.location.hash) {
+    const params = new URLSearchParams(window.location.hash.substring(1))
+    const accessTokenFromHash = params.get('access_token')
+    const errorFromHash = params.get('error')
+
+    if (accessTokenFromHash) {
+      userAccessToken = accessTokenFromHash
+      localStorage.setItem('ocrx_google_user_token', userAccessToken)
+      // クリーンな URL にリセット
+      history.replaceState(null, '', window.location.pathname)
+    } else if (errorFromHash) {
+      const errorDesc = params.get('error_description') || errorFromHash
+      setTimeout(() => {
+        showError(`Google OAuth2 リダイレクトエラー (${errorFromHash}):\n${errorDesc}`)
+      }, 100)
+    }
+  }
 
   /**
    * 認証状態の表示およびセクションの制御を行います。
@@ -137,32 +156,17 @@ document.addEventListener('DOMContentLoaded', () => {
     showView('error')
   }
 
-  // Google Identity Services (GIS) OAuth2 ワンタップサインイン
+  // Google OAuth2 リダイレクト型ワンタップサインイン（ポップアップブロック回避）
   if (googleLoginBtn) {
     googleLoginBtn.addEventListener('click', () => {
-      try {
-        if (window.google?.accounts?.oauth2) {
-          // Google 公式 Identity Services SDK を用いてポップアップでトークンを取得
-          const client = window.google.accounts.oauth2.initTokenClient({
-            client_id: GOOGLE_CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/drive.file',
-            callback: (response) => {
-              if (response.access_token) {
-                userAccessToken = response.access_token
-                localStorage.setItem('ocrx_google_user_token', userAccessToken)
-                checkAuthStatus()
-              } else if (response.error) {
-                showError(`Google ログインエラー: ${response.error}`)
-              }
-            },
-          })
-          client.requestAccessToken()
-        } else {
-          showError('Google ログイン SDK の読み込みに失敗しました。ページをリロードするか下部手動入力をお試しください。')
-        }
-      } catch (err) {
-        showError(`Google ログイン中に例外が発生しました: ${err.message || err}`)
-      }
+      // ポップアップのブロックやブラウザ制限を回避し、確実に Google 認可画面へ誘導するため標準 OAuth2 リダイレクト URI を生成
+      const redirectUri = window.location.origin
+      const scope = encodeURIComponent('https://www.googleapis.com/auth/drive.file')
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(
+        redirectUri
+      )}&response_type=token&scope=${scope}&include_granted_scopes=true`
+
+      window.location.href = authUrl
     })
   }
 
