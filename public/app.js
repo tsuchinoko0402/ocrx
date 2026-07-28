@@ -306,12 +306,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateProgress(85, 'ご自身の Google Drive に保存中...', 'ユーザー容量 (5TB) を利用して原本JPG, Markdown, PDFを自動保存しています。')
 
-        // 5. ユーザーのアクセストークンを付与して /api/save を呼び出し
+        // 5. Google Drive 上で作成日時順に綺麗にソートできるよう YYYYMMDD_HHmmss 形式のタイムスタンプを付与
+        const now = new Date()
+        const timestamp = [
+          now.getFullYear(),
+          String(now.getMonth() + 1).padStart(2, '0'),
+          String(now.getDate()).padStart(2, '0'),
+          '_',
+          String(now.getHours()).padStart(2, '0'),
+          String(now.getMinutes()).padStart(2, '0'),
+          String(now.getSeconds()).padStart(2, '0'),
+        ].join('')
+
+        const fileTitle = `${timestamp}_${analyzeData.title}`
+
+        // ユーザーのアクセストークンを付与して /api/save を呼び出し
         const formData = new FormData()
-        formData.append('title', analyzeData.title)
-        formData.append('jpg', file, `${analyzeData.title}.jpg`)
+        formData.append('title', fileTitle)
+        formData.append('jpg', file, `${fileTitle}.jpg`)
         formData.append('markdown', analyzeData.markdown)
-        formData.append('pdf', pdfBlob, `${analyzeData.title}.pdf`)
+        formData.append('pdf', pdfBlob, `${fileTitle}.pdf`)
         formData.append('userAccessToken', userAccessToken)
 
         const saveRes = await fetch('/api/save', {
