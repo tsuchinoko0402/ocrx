@@ -50,7 +50,7 @@ export function buildGeminiRequest(imageBase64: string, mimeType: string): Gemin
       },
     ],
     generationConfig: {
-      // 理由: LLMの出力揺れによるパース失敗を防ぎ、型安全に解析結果を取得するために Structured Outputs を強制
+      // LLMの出力揺れによるパース失敗を防ぎ、型安全に解析結果を取得するために Structured Outputs を強制
       response_mime_type: 'application/json',
       response_schema: GEMINI_RESPONSE_SCHEMA,
     },
@@ -68,13 +68,13 @@ export function parseGeminiResponse(rawResponse: any): AnalyzeResult {
   const candidate = rawResponse?.candidates?.[0]
   const text = candidate?.content?.parts?.[0]?.text
   if (!text) {
-    // 理由: APIキー無効やコンテンツフィルタリング等で候補が得られなかった場合に早期失敗させるため
+    // APIキー無効やコンテンツフィルタリング等で候補が得られなかった場合に早期失敗させるため
     throw new Error('Invalid response from Gemini API: missing content text')
   }
 
   const parsed = JSON.parse(text)
   if (!parsed.title || !parsed.markdown || !Array.isArray(parsed.box2d)) {
-    // 理由: スキーマ不適合のデータが後続処理（PDF作成やDrive保存）へ流出して予期せぬクラッシュを引き起こすのを防ぐため
+    // スキーマ不適合のデータが後続処理（PDF作成やDrive保存）へ流出して予期せぬクラッシュを引き起こすのを防ぐため
     throw new Error('Invalid Gemini output schema: missing required fields')
   }
 
@@ -98,7 +98,7 @@ export async function analyzeImageWithGemini(
   mimeType: string,
   apiKey: string
 ): Promise<AnalyzeResult> {
-  // 理由: コストとレスポンス速度のバランスが優れている gemini-2.5-flash モデルを採用
+  // コストとレスポンス速度のバランスが優れている gemini-2.5-flash モデルを採用
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
   const body = buildGeminiRequest(imageBase64, mimeType)
 
