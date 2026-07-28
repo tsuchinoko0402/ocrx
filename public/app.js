@@ -124,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function checkAuthStatus() {
     if (userAccessToken) {
       if (authStatusBadge) {
-        authStatusBadge.textContent = '認証済み (5TB)'
+        authStatusBadge.textContent = '認証済み'
         authStatusBadge.className = 'badge badge-success'
       }
       if (logoutBtn) logoutBtn.classList.remove('hidden')
@@ -369,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /**
-   * 1つのジョブを非同期で完全実行（Gemini ➔ Canvas Crop ➔ PDF生成 ➔ 5TB Google Drive 保存）します。
+   * 1つのジョブを非同期で完全実行（Gemini ➔ Canvas Crop ➔ PDF生成 ➔ Google Drive 保存）します。
    *
    * @param {object} job
    */
@@ -655,7 +655,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const pdfBlob = await generatePdfFromImageBlob(croppedJpgBlob, cropArea.width, cropArea.height)
 
-        updateProgress(85, 'ご自身の Google Drive に保存中...', 'ユーザー容量 (5TB) を利用して原本JPG, Markdown, PDFを自動保存しています。')
+        updateProgress(85, 'ご自身の Google Drive に保存中...', '原本JPG, Markdown, PDFを自動保存しています。')
 
         const now = new Date()
         const timestamp = [

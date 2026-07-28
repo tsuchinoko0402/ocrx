@@ -76,7 +76,7 @@ export async function buildSingleFileMultipartBody(params: SingleFileUploadParam
 
 /**
  * ユーザーの Google アクセストークンを使用して単一ファイルを Google Drive API v3 に直接保存します。
- * ユーザー本人のストレージ（5TB等の個人容量）が直接使用されるため容量制限エラーを回避できます。
+ * ユーザー本人のストレージが直接使用されるため容量制限エラーを回避できます。
  *
  * @param params - 保存ファイル情報
  * @param userAccessToken - ユーザーの OAuth2 アクセストークン
