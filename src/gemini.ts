@@ -28,7 +28,7 @@ export const GEMINI_RESPONSE_SCHEMA = {
 }
 
 /**
- * Gemini 2.5 Flash API へのリクエストボディを作成します。
+ * Gemini API へのリクエストボディを作成します。
  *
  * @param imageBase64 - 画像の Base64 文字列
  * @param mimeType - 画像の MIME タイプ (例: 'image/png', 'image/jpeg')
@@ -91,15 +91,17 @@ export function parseGeminiResponse(rawResponse: any): AnalyzeResult {
  * @param imageBase64 - 画像の Base64 文字列
  * @param mimeType - 画像の MIME タイプ
  * @param apiKey - Gemini API キー
+ * @param modelName - 使用する Gemini モデル名（指定なしの場合はエイリアス gemini-flash-latest を自動採用）
  * @returns 解析結果のプロミス
  */
 export async function analyzeImageWithGemini(
   imageBase64: string,
   mimeType: string,
-  apiKey: string
+  apiKey: string,
+  modelName: string = 'gemini-flash-latest'
 ): Promise<AnalyzeResult> {
-  // コストとレスポンス速度のバランスが優れている gemini-2.5-flash モデルを採用
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+  // モデルアップデートのたびに再デプロイする手間を排除するため、Google公式の自動更新エイリアスモデル (gemini-flash-latest) をデフォルトとして採用
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`
   const body = buildGeminiRequest(imageBase64, mimeType)
 
   const response = await fetch(url, {

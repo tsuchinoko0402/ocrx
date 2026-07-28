@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { analyzeImageWithGemini } from './gemini'
-import { getAccessTokenWithServiceAccount, buildMultipartBody } from './gdrive'
+import { uploadUserFileToDrive } from './gdrive'
 
 /**
  * Cloudflare Workers 環境変数バインディング定義
@@ -10,10 +10,10 @@ export interface Env {
   ASSETS: Fetcher
   /** Gemini API Key シークレット */
   GEMINI_API_KEY?: string
-  /** Google Drive 保存先フォルダ ID */
+  /** 使用する Gemini モデル名（未設定時は gemini-flash-latest を自動採用） */
+  GEMINI_MODEL?: string
+  /** Google Drive 保存先フォルダ ID (オプション) */
   GDRIVE_FOLDER_ID?: string
-  /** Google Service Account JSON シークレット */
-  GDRIVE_SERVICE_ACCOUNT_JSON?: string
   /** AI エージェント用 Bearer 認証 API Key シークレット */
   MICRO_APP_API_KEY?: string
 }
@@ -41,7 +41,7 @@ const openApiSpec = {
     },
     '/api/analyze': {
       post: {
-        summary: 'Analyze document image with Gemini 2.5 Flash',
+        summary: 'Analyze document image with Gemini AI',
         requestBody: {
           required: true,
           content: {
@@ -50,7 +50,7 @@ const openApiSpec = {
                 type: 'object',
                 properties: {
                   imageBase64: { type: 'string', description: 'Base64 encoded image data' },
-                  mimeType: { type: 'string', description: 'Image MIME type (e.g. image/jpeg, image/png)' },
+                  mimeType: { type: 'string', description: 'Image MIME type' },
                 },
                 required: ['imageBase64'],
               },
@@ -59,14 +59,12 @@ const openApiSpec = {
         },
         responses: {
           '200': { description: 'Analysis result (title, markdown, box2d)' },
-          '400': { description: 'Invalid payload' },
-          '401': { description: 'Unauthorized' },
         },
       },
     },
     '/api/save': {
       post: {
-        summary: 'Upload scanned set (JPG, Markdown, PDF) to Google Drive',
+        summary: 'Upload scanned set (JPG, Markdown, PDF) to user Google Drive',
         requestBody: {
           required: true,
           content: {
@@ -78,6 +76,7 @@ const openApiSpec = {
                   jpg: { type: 'string', format: 'binary' },
                   markdown: { type: 'string' },
                   pdf: { type: 'string', format: 'binary' },
+                  userAccessToken: { type: 'string', description: 'User Google OAuth2 Access Token' },
                 },
               },
             },
@@ -85,8 +84,7 @@ const openApiSpec = {
         },
         responses: {
           '200': { description: 'File upload status' },
-          '400': { description: 'Missing file components' },
-          '500': { description: 'Google Drive API error' },
+          '400': { description: 'Missing files or access token' },
         },
       },
     },
@@ -98,14 +96,12 @@ const openApiSpec = {
  */
 app.use('/api/*', async (c, next) => {
   const microAppApiKey = c.env?.MICRO_APP_API_KEY
-  // MICRO_APP_API_KEY が未設定の場合はパブリックツールとして認証を通過させる
   if (!microAppApiKey) {
     return next()
   }
 
   const authHeader = c.req.header('Authorization')
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    // 認証キー未提示のリクエストを遮断し不正アクセスを抑止するため
     return c.json({ error: 'Unauthorized: missing or invalid Bearer token' }, 401)
   }
 
@@ -137,7 +133,6 @@ app.get('/openapi.json', (c) => {
 app.post('/api/analyze', async (c) => {
   const apiKey = c.env?.GEMINI_API_KEY
   if (!apiKey) {
-    // Workers のシークレット未設定による実行時障害を明確化してデバッグを容易にするため
     return c.json({ error: 'Server misconfiguration: GEMINI_API_KEY is not set' }, 500)
   }
 
@@ -148,7 +143,8 @@ app.post('/api/analyze', async (c) => {
     }
 
     const mimeType = body.mimeType || 'image/jpeg'
-    const result = await analyzeImageWithGemini(body.imageBase64, mimeType, apiKey)
+    const modelName = c.env?.GEMINI_MODEL || 'gemini-flash-latest'
+    const result = await analyzeImageWithGemini(body.imageBase64, mimeType, apiKey, modelName)
 
     return c.json(result)
   } catch (err: any) {
@@ -158,18 +154,9 @@ app.post('/api/analyze', async (c) => {
 
 /**
  * Google Drive 保存 API エンドポイント (`POST /api/save`)
+ * ユーザー本人の OAuth2 アクセストークンを使用してストレージ容量エラーなくドライブへ保存します。
  */
 app.post('/api/save', async (c) => {
-  const saJsonStr = c.env?.GDRIVE_SERVICE_ACCOUNT_JSON
-  const folderId = c.env?.GDRIVE_FOLDER_ID
-
-  if (!saJsonStr || !folderId) {
-    return c.json(
-      { error: 'Server misconfiguration: GDRIVE_SERVICE_ACCOUNT_JSON or GDRIVE_FOLDER_ID is missing' },
-      500
-    )
-  }
-
   try {
     const formData = await c.req.formData()
     const title = (formData.get('title') as string) || `Scan_${Date.now()}`
@@ -177,47 +164,51 @@ app.post('/api/save', async (c) => {
     const mdText = (formData.get('markdown') as string) || ''
     const pdfFile = formData.get('pdf') as File | null
 
+    // ヘッダーまたは FormData からユーザーのアクセストークンを取得
+    let userAccessToken = formData.get('userAccessToken') as string | null
+    if (!userAccessToken) {
+      const authHeader = c.req.header('X-User-Google-Token')
+      if (authHeader) userAccessToken = authHeader
+    }
+
+    if (!userAccessToken) {
+      // ユーザーの Google アクセストークンが欠落している場合、認証要求エラーを返却
+      return c.json({ error: 'Missing userAccessToken: Google OAuth2 authentication required' }, 400)
+    }
+
     if (!jpgFile || !pdfFile) {
-      // 3点セット保存の必須構成要素が欠けている場合の不正リクエストを弾くため
       return c.json({ error: 'Missing required files: jpg and pdf must be provided' }, 400)
     }
 
     const jpgData = new Uint8Array(await jpgFile.arrayBuffer())
     const pdfData = new Uint8Array(await pdfFile.arrayBuffer())
 
-    // サービスアカウント JSON をパースしてアクセストークンを取得
-    const saJson = JSON.parse(saJsonStr)
-    const accessToken = await getAccessTokenWithServiceAccount(saJson)
+    const folderId = c.env?.GDRIVE_FOLDER_ID || undefined
 
-    // Multi-part ボディの構築
-    const { body, contentType } = await buildMultipartBody({
-      folderId,
-      title,
-      jpgData,
-      mdText,
-      pdfData,
+    // ユーザー本人の Google アクセストークンを使って 3 ファイルをそれぞれ保存
+    const [jpgRes, mdRes, pdfRes] = await Promise.all([
+      uploadUserFileToDrive(
+        { folderId, filename: `${title}.jpg`, mimeType: 'image/jpeg', content: jpgData },
+        userAccessToken
+      ),
+      uploadUserFileToDrive(
+        { folderId, filename: `${title}.md`, mimeType: 'text/markdown', content: mdText },
+        userAccessToken
+      ),
+      uploadUserFileToDrive(
+        { folderId, filename: `${title}.pdf`, mimeType: 'application/pdf', content: pdfData },
+        userAccessToken
+      ),
+    ])
+
+    return c.json({
+      status: 'ok',
+      files: {
+        jpg: jpgRes,
+        markdown: mdRes,
+        pdf: pdfRes,
+      },
     })
-
-    // Google Drive API v3 に multipart アップロードリクエストを送信
-    const driveRes = await fetch(
-      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': contentType,
-        },
-        body: body as unknown as BodyInit,
-      }
-    )
-
-    if (!driveRes.ok) {
-      const errText = await driveRes.text()
-      return c.json({ error: `Google Drive API upload failed (${driveRes.status}): ${errText}` }, 500)
-    }
-
-    const uploadedFileData = await driveRes.json()
-    return c.json({ status: 'ok', file: uploadedFileData })
   } catch (err: any) {
     return c.json({ error: err.message || 'Failed to save to Google Drive' }, 500)
   }

@@ -19,13 +19,41 @@
         <span class="logo-icon">📸</span>
         <h1>ocrx</h1>
       </div>
-      <span class="badge">Gemini 2.5 Flash</span>
+      <div class="auth-status-container">
+        <span id="auth-status-badge" class="badge badge-warning">未認証</span>
+      </div>
     </header>
 
     <!-- Main Content Area -->
     <main class="app-main">
+      <!-- 0. Google OAuth2 Login Section (shown if not authenticated) -->
+      <section id="auth-section" class="card view-section active">
+        <div class="hero-icon">🔑</div>
+        <h2>Google トークンの接続設定</h2>
+        <p class="subtitle">ご自身のアカウント（大容量 5TB ストレージ）へ直接自動保存するため、トークンをセットしてください。</p>
+
+        <div class="oauth-guide-box">
+          <p class="guide-title">💡 1分でできるトークン取得手順:</p>
+          <ol class="guide-steps">
+            <li><a href="https://developers.google.com/oauthplayground/#step1&scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file" target="_blank" class="link-btn">👉 OAuth Playground を開く</a></li>
+            <li>「Authorize APIs」を押し、ご自身の Google アカウントでログイン</li>
+            <li>「Exchange authorization code for tokens」をクリック</li>
+            <li>表示された <strong>Access token</strong> (<code>ya29...</code>) をコピーして下に貼り付け</li>
+          </ol>
+        </div>
+
+        <div class="token-manual-input">
+          <div class="input-with-button">
+            <input type="text" id="manual-token-input" placeholder="Access Token (ya29...)" class="input-text">
+            <button id="paste-token-btn" class="btn btn-secondary btn-sm" type="button">📋 クリップボードから貼り付け</button>
+          </div>
+          <button id="save-token-btn" class="btn btn-primary" type="button">トークンを保存して開始</button>
+          <p id="token-error-msg" class="error-msg-small hidden"></p>
+        </div>
+      </section>
+
       <!-- 1. Initial State: Camera Capture -->
-      <section id="capture-section" class="card view-section active">
+      <section id="capture-section" class="card view-section hidden">
         <div class="hero-icon">📄</div>
         <h2>紙資料をスキャン</h2>
         <p class="subtitle">書類、プリント、手書きメモを撮影するだけでワンタップでOCR解析・PDFトリミング・Drive保存を行います。</p>
@@ -34,6 +62,8 @@
           <span>📷 写真を撮影 / 選択</span>
           <input type="file" id="camera-input" accept="image/*" capture="environment">
         </label>
+
+        <button id="reauth-btn" class="btn btn-text small-link">トークンを再設定</button>
       </section>
 
       <!-- 2. Processing State -->
@@ -78,11 +108,29 @@
           <button id="reset-btn" class="btn btn-secondary">別の資料を撮影</button>
         </div>
       </section>
+
+      <!-- 4. Error Display State (Copyable) -->
+      <section id="error-section" class="card view-section error-card hidden">
+        <div class="status-header">
+          <span class="status-icon">⚠️</span>
+          <h2>エラーが発生しました</h2>
+        </div>
+        <p class="subtitle">以下の詳細ログをコピーしてサポート・開発者に送ることができます。</p>
+
+        <div class="error-box-wrapper">
+          <textarea id="error-message-text" class="error-textarea" readonly></textarea>
+        </div>
+
+        <div class="action-buttons error-actions">
+          <button id="copy-error-btn" class="btn btn-primary">📋 エラーをコピー</button>
+          <button id="retry-btn" class="btn btn-secondary">再試行する</button>
+        </div>
+      </section>
     </main>
 
     <!-- Footer -->
     <footer class="app-footer">
-      <p>Powered by Cloudflare Workers & Gemini 2.5 Flash</p>
+      <p>Powered by Cloudflare Workers & Gemini AI</p>
     </footer>
   </div>
 
